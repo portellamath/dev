@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-ts"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      Role     @default(USER)
+  
+  profile   Profile? 
+  orders    Order[]  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users") 
+}
+
+model Profile {
+  id     Int     @id @default(autoincrement())
+  bio    String?
+  userId String  @unique
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  
+  categories  Category[]
+  orderItems  OrderItem[]
+
+  createdAt   DateTime @default(now())
+
+  @@index([name])
+  @@map("products")
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+
+  @@map("categories")
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  status     OrderStatus @default(PENDING)
+  totalValue Decimal     @db.Decimal(10, 2)
+
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  
+  items      OrderItem[]
+
+  createdAt  DateTime    @default(now())
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  quantity  Int
+  price     Decimal @db.Decimal(10, 2) 
+
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
