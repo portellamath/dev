@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//////////////////////
+// ENUMS
+//////////////////////
+
 enum Role {
   USER
   ADMIN
@@ -14,10 +18,23 @@ enum Role {
 
 enum OrderStatus {
   PENDING
+  PAID
   SHIPPED
   DELIVERED
   CANCELLED
 }
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  REFUNDED
+}
+
+//////////////////////
+// USER
+//////////////////////
 
 model User {
   id        String   @id @default(uuid())
@@ -25,74 +42,146 @@ model User {
   name      String?
   password  String
   role      Role     @default(USER)
-  
-  profile   Profile? 
-  orders    Order[]  
+  isActive  Boolean  @default(true)
+
+  profile   Profile?
+  orders    Order[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("users") 
+  @@map("users")
 }
 
 model Profile {
   id     Int     @id @default(autoincrement())
   bio    String?
+
   userId String  @unique
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("profiles")
 }
 
+//////////////////////
+// PRODUCT
+//////////////////////
+
 model Product {
   id          String   @id @default(uuid())
   name        String
+  slug        String   @unique
   description String?
+
   price       Decimal  @db.Decimal(10, 2)
   stock       Int      @default(0)
-  
+
+  isActive    Boolean  @default(true)
+
+  images      Json?    // array de URLs
+  specs       Json?    // ex: switch, layout, rgb
+
   categories  Category[]
   orderItems  OrderItem[]
 
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([name])
+  @@index([slug])
   @@map("products")
 }
 
+//////////////////////
+// CATEGORY (hierarquia)
+//////////////////////
+
 model Category {
-  id       Int       @id @default(autoincrement())
-  name     String    @unique
-  products Product[]
+  id        Int        @id @default(autoincrement())
+  name      String
+  slug      String     @unique
+
+  parentId  Int?
+  parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryToCategory")
+
+  products  Product[]
 
   @@map("categories")
 }
 
+//////////////////////
+// ORDER
+//////////////////////
+
 model Order {
-  id         String      @id @default(cuid())
-  status     OrderStatus @default(PENDING)
-  totalValue Decimal     @db.Decimal(10, 2)
+  id           String      @id @default(cuid())
+  status       OrderStatus @default(PENDING)
 
-  userId     String
-  user       User        @relation(fields: [userId], references: [id])
-  
-  items      OrderItem[]
+  totalValue   Decimal     @db.Decimal(10, 2)
+  shippingCost Decimal     @default(0) @db.Decimal(10, 2)
 
-  createdAt  DateTime    @default(now())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
 
+  items        OrderItem[]
+  payment      Payment?
+
+  address      Json        // endereço completo
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
   @@map("orders")
 }
+
+//////////////////////
+// ORDER ITEMS
+//////////////////////
 
 model OrderItem {
   id        Int     @id @default(autoincrement())
   quantity  Int
-  price     Decimal @db.Decimal(10, 2) 
+
+  price     Decimal @db.Decimal(10, 2) // preço no momento da compra
+  subtotal  Decimal @db.Decimal(10, 2)
 
   orderId   String
   order     Order   @relation(fields: [orderId], references: [id])
-  
+
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  @@index([orderId])
+  @@index([productId])
   @@map("order_items")
+}
+
+//////////////////////
+// PAYMENT (Mercado Pago)
+//////////////////////
+
+model Payment {
+  id            String        @id @default(uuid())
+
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+
+  provider      String        // "mercado_pago"
+  providerId    String?       // id do pagamento no MP
+
+  status        PaymentStatus @default(PENDING)
+  amount        Decimal       @db.Decimal(10, 2)
+
+  paymentMethod String?       // pix, credit_card, boleto
+  externalData  Json?         // resposta completa do MP
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([providerId])
+  @@map("payments")
 }
