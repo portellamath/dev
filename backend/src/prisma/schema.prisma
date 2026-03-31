@@ -37,18 +37,21 @@ enum PaymentStatus {
 //////////////////////
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  password  String
-  role      Role     @default(USER)
-  isActive  Boolean  @default(true)
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true)
 
-  profile   Profile?
-  orders    Order[]
+  profile       Profile?
+  orders        Order[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  refreshTokens RefreshToken[]
+  resetTokens   PasswordResetToken[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@map("users")
 }
@@ -61,6 +64,42 @@ model Profile {
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("profiles")
+}
+
+//////////////////////
+// AUTH
+//////////////////////
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  userId      String
+  tokenHash   String
+  jti         String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 //////////////////////
@@ -78,10 +117,10 @@ model Product {
 
   isActive    Boolean  @default(true)
 
-  images      Json?    // array de URLs
   specs       Json?    // ex: switch, layout, rgb
 
   categories  Category[]
+  images      ProductImage[]
   orderItems  OrderItem[]
 
   createdAt   DateTime @default(now())
@@ -89,11 +128,24 @@ model Product {
 
   @@index([name])
   @@index([slug])
+  @@index([isActive])
   @@map("products")
 }
 
+model ProductImage {
+  id        Int     @id @default(autoincrement())
+  url       String
+  alt       String?
+  position  Int     @default(0)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
 //////////////////////
-// CATEGORY (hierarquia)
+// CATEGORY
 //////////////////////
 
 model Category {
@@ -107,6 +159,7 @@ model Category {
 
   products  Product[]
 
+  @@index([parentId])
   @@map("categories")
 }
 
@@ -118,16 +171,17 @@ model Order {
   id           String      @id @default(cuid())
   status       OrderStatus @default(PENDING)
 
-  totalValue   Decimal     @db.Decimal(10, 2)
+  itemsValue   Decimal     @db.Decimal(10, 2)
   shippingCost Decimal     @default(0) @db.Decimal(10, 2)
+  totalValue   Decimal     @db.Decimal(10, 2)
 
   userId       String
   user         User        @relation(fields: [userId], references: [id])
 
   items        OrderItem[]
-  payment      Payment?
+  payments     Payment[]
 
-  address      Json        // endereço completo
+  address      Json
 
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -146,7 +200,7 @@ model OrderItem {
   id        Int     @id @default(autoincrement())
   quantity  Int
 
-  price     Decimal @db.Decimal(10, 2) // preço no momento da compra
+  price     Decimal @db.Decimal(10, 2)
   subtotal  Decimal @db.Decimal(10, 2)
 
   orderId   String
@@ -155,6 +209,7 @@ model OrderItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  @@unique([orderId, productId])
   @@index([orderId])
   @@index([productId])
   @@map("order_items")
@@ -167,21 +222,23 @@ model OrderItem {
 model Payment {
   id            String        @id @default(uuid())
 
-  orderId       String        @unique
+  orderId       String
   order         Order         @relation(fields: [orderId], references: [id])
 
-  provider      String        // "mercado_pago"
-  providerId    String?       // id do pagamento no MP
+  provider      String
+  providerId    String?
 
   status        PaymentStatus @default(PENDING)
   amount        Decimal       @db.Decimal(10, 2)
 
-  paymentMethod String?       // pix, credit_card, boleto
-  externalData  Json?         // resposta completa do MP
+  paymentMethod String?
+  externalData  Json?
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
+  @@index([orderId])
   @@index([providerId])
+  @@index([status])
   @@map("payments")
 }
